@@ -11,47 +11,14 @@ export const useSupabaseAuth = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // ฟังก์ชัน helper: ดึง full user data จาก users table
-  const fetchFullUserData = async (authUser) => {
-    if (!authUser) return null;
-    try {
-      const { data, error: fetchError } = await supabase
-        .from("users")
-        .select("uid, email, memberId, memberName, displayName, role, unit, gen, avatar, cover")
-        .eq("uid", authUser.id)
-        .single();
-      
-      if (fetchError) {
-        console.warn("ไม่พบ user data ใน users table:", fetchError);
-        return authUser;
-      }
-      
-      return { ...data, id: authUser.id, email: authUser.email };
-    } catch (err) {
-      console.error("Error fetching user data:", err);
-      return authUser;
-    }
-  };
-
   useEffect(() => {
-    const initAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        const fullUserData = await fetchFullUserData(session.user);
-        setCurrentUser(fullUserData);
-      }
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setCurrentUser(session?.user || null);
       setLoading(false);
-    };
+    });
 
-    initAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        const fullUserData = await fetchFullUserData(session.user);
-        setCurrentUser(fullUserData);
-      } else {
-        setCurrentUser(null);
-      }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setCurrentUser(session?.user || null);
     });
 
     return () => subscription?.unsubscribe();
@@ -60,53 +27,25 @@ export const useSupabaseAuth = () => {
   const register = async (email, password, memberId, memberName) => {
     try {
       setError(null);
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-
+      const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
       if (signUpError) throw signUpError;
 
-      // เก็บข้อมูล user ใน users table
-      // ใช้ service role เพื่อ bypass RLS
-      const { data: userData, error: insertError } = await supabase.from("users").insert([
-        {
-          uid: data.user.id,
-          email,
-          memberId: memberId.trim(),
-          memberName: memberName.trim() || memberId.trim(),
-          displayName: memberName.trim() || memberId.trim(),
-          role: "fan",
-          unit: "",
-          gen: "",
-          avatar: null,
-          cover: null,
-          memberIdUpdatedAt: new Date().toISOString(),
-          createdAt: new Date().toISOString(),
-        },
-      ]);
-
-      if (insertError) {
-        // ถ้า insert fail ให้ลบ auth user
-        await supabase.auth.admin.deleteUser(data.user.id);
-        throw insertError;
-      }
-
-      // return full user data
-      const fullUserData = { 
-        id: data.user.id, 
+      await supabase.from("users").insert([{
         uid: data.user.id,
-        email: data.user.email,
-        displayName: memberName.trim() || memberId.trim(),
+        email,
         memberId: memberId.trim(),
+        memberName: memberName.trim() || memberId.trim(),
+        displayName: memberName.trim() || memberId.trim(),
         role: "fan",
         unit: "",
         gen: "",
         avatar: null,
         cover: null,
-      };
-      setCurrentUser(fullUserData);
-      return fullUserData;
+        memberIdUpdatedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+      }]);
+
+      return data.user;
     } catch (err) {
       setError(err.message);
       throw err;
@@ -116,17 +55,9 @@ export const useSupabaseAuth = () => {
   const login = async (email, password) => {
     try {
       setError(null);
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
       if (signInError) throw signInError;
-      
-      // ดึง full user data จาก users table
-      const fullUserData = await fetchFullUserData(data.user);
-      setCurrentUser(fullUserData);
-      return fullUserData;
+      return data.user;
     } catch (err) {
       setError(err.message);
       throw err;
