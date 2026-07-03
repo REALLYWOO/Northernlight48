@@ -2,10 +2,6 @@ import { useSupabaseAuth } from "./useSupabase";
 import { useEffect } from "react";
 import React, { useState, useRef, useContext, createContext, useMemo } from "react";
 import { createClient } from "@supabase/supabase-js";
-
-const SUPABASE_URL = "https://cknldqbyybbcmmqqtohm.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNrbmxkcWJ5eWJiY21tcXF0b2htIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwMTM0OTMsImV4cCI6MjA5ODU4OTQ5M30.qu60yuQEVJ03_Xo00SulxXFFYzxN1ITbLVQIeBGsWbs";
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 import {
   Home, Search, Bell, User, MessageCircle, Bookmark, Send, X, BadgeCheck, ChevronLeft,
   Play, ChevronRight, Trophy, Image as ImageIcon, Video, BarChart2, Mic, MicOff, PhoneOff,
@@ -20,6 +16,9 @@ const LOGO_URI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAdMAAAKOCAIAAABy
    Brand palette pulled from the logo (deep teal → soft green),
    real accounts only (login/register), no seeded fake members.
 --------------------------------------------------------- */
+
+// ✅ Import supabase จาก useSupabase.js แทนการสร้างซ้ำ
+import { supabase } from "./useSupabase";
 
 const PRIMARY = "#2F8F6C";        // main brand green (from logo)
 const PRIMARY_DARK = "#173F3A";   // deep teal (from logo shadow tones)
