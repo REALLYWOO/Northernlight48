@@ -1172,7 +1172,7 @@ function ProfileView() {
           {/* Stars */}
           <div className="text-center flex-1">
             <div className="flex items-center justify-center gap-0.5 mb-0.5">
-              <span className="text-base">⭐</span>
+              <Sparkles size={18} color={PRIMARY} />
               <p className="text-xl font-bold" style={{ fontFamily: "Prompt, sans-serif", color: "#1A1A1E" }}>0</p>
             </div>
             <p className="text-xs" style={{ color: "#A9A6B4", fontFamily: "Prompt, sans-serif" }}>Stars</p>
@@ -1368,12 +1368,23 @@ function BottomNav({ view, setView }) {
 /* ---------- Main app shell (shown once logged in) ---------- */
 function MainApp() {
   const { currentUser, posts } = useCtx();
-  const [view, setView] = useState("home");
+  
+  // ✅ FIX: Initialize view from localStorage, default to "home" if not found
+  const [view, setView] = useState(() => {
+    const savedView = localStorage.getItem("currentView");
+    return savedView || "home";
+  });
+  
   const [activeStory, setActiveStory] = useState(null);
   const [query, setQuery] = useState("");
   const [gen, setGen] = useState("ALL");
   const [createOpen, setCreateOpen] = useState(false);
   const [liveOpen, setLiveOpen] = useState(false);
+
+  // ✅ FIX: Save view to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem("currentView", view);
+  }, [view]);
 
   return (
     <div className="w-full max-w-md relative" style={{ background: "#FAF8F5", minHeight: "100vh" }}>
