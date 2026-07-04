@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SUPABASE_URL = "https://cknldqbyybbcmmqqtohm.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNrbmxkcWJ5eWJiY21tcXF0b2htIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwMTM0OTMsImV4cCI6MjA5ODU4OTQ5M30.qu60yuQEVJ03_Xo00SulxXFFYzxN1ITbLVQIeBGsWbs";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -11,47 +11,14 @@ export const useSupabaseAuth = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // ฟังก์ชัน helper: ดึง full user data จาก users table
-  const fetchFullUserData = async (authUser) => {
-    if (!authUser) return null;
-    try {
-      const { data, error: fetchError } = await supabase
-        .from("users")
-        .select("uid, email, memberId, memberName, displayName, role, unit, gen, avatar, cover")
-        .eq("uid", authUser.id)
-        .single();
-      
-      if (fetchError) {
-        console.warn("ไม่พบ user data ใน users table:", fetchError);
-        return authUser;
-      }
-      
-      return { ...data, id: authUser.id, email: authUser.email };
-    } catch (err) {
-      console.error("Error fetching user data:", err);
-      return authUser;
-    }
-  };
-
   useEffect(() => {
-    const initAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        const fullUserData = await fetchFullUserData(session.user);
-        setCurrentUser(fullUserData);
-      }
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setCurrentUser(session?.user || null);
       setLoading(false);
-    };
+    });
 
-    initAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        const fullUserData = await fetchFullUserData(session.user);
-        setCurrentUser(fullUserData);
-      } else {
-        setCurrentUser(null);
-      }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setCurrentUser(session?.user || null);
     });
 
     return () => subscription?.unsubscribe();
@@ -60,53 +27,25 @@ export const useSupabaseAuth = () => {
   const register = async (email, password, memberId, memberName) => {
     try {
       setError(null);
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-
+      const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
       if (signUpError) throw signUpError;
 
-      // เก็บข้อมูล user ใน users table
-      // ใช้ service role เพื่อ bypass RLS
-      const { data: userData, error: insertError } = await supabase.from("users").insert([
-        {
-          uid: data.user.id,
-          email,
-          memberId: memberId.trim(),
-          memberName: memberName.trim() || memberId.trim(),
-          displayName: memberName.trim() || memberId.trim(),
-          role: "fan",
-          unit: "",
-          gen: "",
-          avatar: null,
-          cover: null,
-          memberIdUpdatedAt: new Date().toISOString(),
-          createdAt: new Date().toISOString(),
-        },
-      ]);
-
-      if (insertError) {
-        // ถ้า insert fail ให้ลบ auth user
-        await supabase.auth.admin.deleteUser(data.user.id);
-        throw insertError;
-      }
-
-      // return full user data
-      const fullUserData = { 
-        id: data.user.id, 
+      await supabase.from("users").insert([{
         uid: data.user.id,
-        email: data.user.email,
-        displayName: memberName.trim() || memberId.trim(),
+        email,
         memberId: memberId.trim(),
+        memberName: memberName.trim() || memberId.trim(),
+        displayName: memberName.trim() || memberId.trim(),
         role: "fan",
         unit: "",
         gen: "",
-        avatar: null,
-        cover: null,
-      };
-      setCurrentUser(fullUserData);
-      return fullUserData;
+        avatar_url: null,
+        cover_url: null,
+        memberIdUpdatedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+      }]);
+
+      return data.user;
     } catch (err) {
       setError(err.message);
       throw err;
@@ -116,17 +55,9 @@ export const useSupabaseAuth = () => {
   const login = async (email, password) => {
     try {
       setError(null);
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
       if (signInError) throw signInError;
-      
-      // ดึง full user data จาก users table
-      const fullUserData = await fetchFullUserData(data.user);
-      setCurrentUser(fullUserData);
-      return fullUserData;
+      return data.user;
     } catch (err) {
       setError(err.message);
       throw err;
@@ -144,5 +75,107 @@ export const useSupabaseAuth = () => {
     }
   };
 
-  return { currentUser, loading, error, register, login, logout };
+  // ✅ อัพโหลดรูปไปเก็บใน Supabase Storage + ดึง public URL กลับมา
+  const uploadProfileImage = async (file, userId, fieldType) => {
+    try {
+      if (!file || !userId) throw new Error("ไฟล์หรือ userId ไม่ครบ");
+
+      // สร้างชื่อไฟล์: profile-images/[userId]/avatar หรือ cover
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${fieldType}-${Date.now()}.${fileExt}`;
+      const filePath = `${userId}/${fileName}`;
+
+      // 1️⃣ อัพโหลดไปเก็บ storage
+      const { data, error: uploadError } = await supabase.storage
+        .from("profile-images")
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+
+      // 2️⃣ ดึง public URL กลับมา
+      const { data: publicUrl } = supabase.storage
+        .from("profile-images")
+        .getPublicUrl(filePath);
+
+      return publicUrl.publicUrl;
+    } catch (err) {
+      console.error(`Error uploading ${fieldType}:`, err);
+      throw err;
+    }
+  };
+
+  // ✅ Hook ดึง user profile จาก users table + Real-time listener
+  const useUserProfile = (uid) => {
+    const [profile, setProfile] = useState(null);
+    const [profileLoading, setProfileLoading] = useState(true);
+
+    useEffect(() => {
+      if (!uid) {
+        setProfile(null);
+        setProfileLoading(false);
+        return;
+      }
+
+      // โหลด profile ครั้งแรก
+      const loadProfile = async () => {
+        try {
+          const { data, error: err } = await supabase
+            .from("users")
+            .select("*")
+            .eq("uid", uid)
+            .single();
+
+          if (err) {
+            console.error("Error loading profile:", err);
+            setProfile(null);
+          } else {
+            setProfile(data);
+          }
+        } catch (err) {
+          console.error("Profile load error:", err);
+          setProfile(null);
+        } finally {
+          setProfileLoading(false);
+        }
+      };
+
+      loadProfile();
+
+      // ✅ Real-time listener ฟังการเปลี่ยนแปลง
+      const channel = supabase
+        .channel(`user-profile-${uid}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "users",
+            filter: `uid=eq.${uid}`,
+          },
+          (payload) => {
+            console.log("🔄 Profile updated:", payload);
+
+            if (payload.eventType === "DELETE") {
+              setProfile(null);
+              return;
+            }
+
+            // ✅ Merge แทนการทับทั้งก้อน
+            setProfile((prev) => ({ ...(prev || {}), ...payload.new }));
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }, [uid]);
+
+    return { profile, profileLoading };
+  };
+
+  return { currentUser, loading, error, register, login, logout, uploadProfileImage, useUserProfile };
 };

@@ -1,7 +1,6 @@
-import { useSupabaseAuth } from "./useSupabase";
+import { useSupabaseAuth, supabase } from "./useSupabase";
 import { useEffect } from "react";
 import React, { useState, useRef, useContext, createContext, useMemo } from "react";
-import { createClient } from "@supabase/supabase-js";
 import {
   Home, Search, Bell, User, MessageCircle, Bookmark, Send, X, BadgeCheck, ChevronLeft,
   Play, ChevronRight, Trophy, Image as ImageIcon, Video, BarChart2, Mic, MicOff, PhoneOff,
@@ -17,8 +16,6 @@ const LOGO_URI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAdMAAAKOCAIAAABy
    real accounts only (login/register), no seeded fake members.
 --------------------------------------------------------- */
 
-// ✅ Import supabase จาก useSupabase.js แทนการสร้างซ้ำ
-import { supabase } from "./useSupabase";
 
 const PRIMARY = "#2F8F6C";        // main brand green (from logo)
 const PRIMARY_DARK = "#173F3A";   // deep teal (from logo shadow tones)
@@ -34,7 +31,7 @@ function stringToColor(str) {
   return GREEN_PALETTE[Math.abs(hash) % GREEN_PALETTE.length];
 }
 const unitColor = (unit) => stringToColor(unit);
-const unitLabel = (unit) => (unit && unit.trim() ? unit.trim() : "อิสระ");
+const unitLabel = (unit) => (unit && unit.trim() ? unit.trim() : "Member");
 const initialsOf = (name) => (name || "?").trim().slice(0, 2).toUpperCase();
 
 const fmt = (n) => (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "K" : String(n || 0));
@@ -445,7 +442,7 @@ function PostCard({ post }) {
             <NameWithBadge name={author.displayName} verified={author.role === "member"} />
             <div className="flex items-center gap-1.5 mt-0.5">
               {author.role === "member" && author.unit && <UnitTag unit={author.unit} small />}
-              <span className="text-[10px]" style={{ color: "#A9A6B4" }}>{author.role === "fan" ? "แฟนคลับ" : (author.gen || "เมมเบอร์")}</span>
+              <span className="text-[10px]" style={{ color: "#A9A6B4" }}>{author.role === "fan" ? "Fanclub" : (author.gen || "Member")}</span>
             </div>
           </div>
         </div>
@@ -581,7 +578,7 @@ function CreatePostModal({ open, onClose, onGoLive }) {
               <div className="rounded-full flex items-center justify-center" style={{ width: 48, height: 48, background: `${PRIMARY}33`, border: `1.5px solid ${PRIMARY}` }}>
                 <Penlight active color={PRIMARY_SOFT} size={24} />
               </div>
-              <p className="text-sm font-semibold" style={{ color: "#fff", fontFamily: "Prompt, sans-serif" }}>เริ่มไลฟ์สดกับแฟนคลับ</p>
+              <p className="text-sm font-semibold" style={{ color: "#fff", fontFamily: "Prompt, sans-serif" }}>Start live with Fanclub</p>
               <p className="text-xs" style={{ color: "#B9D9CC", fontFamily: "Prompt, sans-serif" }}>กดโพสต์เพื่อเข้าห้องไลฟ์ทันที</p>
             </div>
           )}
@@ -863,6 +860,8 @@ function ProfileView() {
   const canEditMemberId = Date.now() >= nextMemberIdEditAt;
   const daysUntilMemberIdEdit = Math.max(0, Math.ceil((nextMemberIdEditAt - Date.now()) / DAY_MS));
 
+  const { uploadProfileImage } = useCtx();
+
   const handleFile = (field) => async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -871,20 +870,23 @@ function ProfileView() {
     setUploadError(null);
 
     try {
-      // 1️⃣ สร้าง data URL สำหรับแสดงรูป UI ทันที
-      const dataUrl = await fileToDataURL(file);
-      updateCurrentUser({ [field]: dataUrl });
+      // 1️⃣ อัพโหลดไปเก็บใน Supabase Storage
+      const publicUrl = await uploadProfileImage(file, currentUser.id, field);
 
-      // 2️⃣ บันทึกลงฐานข้อมูล
+      // 2️⃣ ให้ UI ดูค่าใหม่ทันที
+      const fieldKey = field === 'avatar' ? 'avatar_url' : 'cover_url';
+      updateCurrentUser({ [fieldKey]: publicUrl });
+
+      // 3️⃣ บันทึก URL ลงฐานข้อมูล
       const { data, error } = await supabase
         .from("users")
-        .update({ [field]: dataUrl })
+        .update({ [fieldKey]: publicUrl })
         .eq("uid", currentUser.id)
         .select()
         .single();
 
       if (error) {
-        console.error(`Error saving ${field}:`, error);
+        console.error(`Error saving ${fieldKey}:`, error);
         setUploadError(`ไม่สามารถบันทึก${field === 'avatar' ? 'รูปโปรไฟล์' : 'ปก'}ได้: ${error.message}`);
         throw error;
       }
@@ -898,7 +900,6 @@ function ProfileView() {
       console.error(`❌ Error saving ${field}:`, err);
       const fieldName = field === 'avatar' ? 'รูปโปรไฟล์' : 'ปก';
       setUploadError(`เกิดข้อผิดพลาด: ${err.message}`);
-      updateCurrentUser({ [field]: currentUser[field] });
     } finally {
       setUploading(false);
       e.target.value = "";
@@ -923,8 +924,8 @@ function ProfileView() {
 
   return (
     <div className="pb-6">
-      <div className="relative w-full" style={{ aspectRatio: "16/7", background: currentUser?.cover ? "#ECE8E1" : `linear-gradient(120deg, ${PRIMARY}, ${PRIMARY_SOFT})` }}>
-        {currentUser?.cover && <img src={currentUser.cover} alt="cover" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = "none"; }} />}
+      <div className="relative w-full" style={{ aspectRatio: "16/7", background: currentUser?.cover_url ? "#ECE8E1" : `linear-gradient(120deg, ${PRIMARY}, ${PRIMARY_SOFT})` }}>
+        {currentUser?.cover_url && <img src={currentUser.cover_url} alt="cover" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = "none"; }} />}
         <button 
           onClick={() => coverInputRef.current && coverInputRef.current.click()}
           disabled={uploading}
@@ -955,8 +956,8 @@ function ProfileView() {
 
         <div className="flex items-center justify-between">
           <div className="relative -mt-10 mb-3" style={{ width: 84 }}>
-            <div className="rounded-full overflow-hidden flex items-center justify-center" style={{ width: 84, height: 84, border: "3px solid #FAF8F5", background: currentUser?.avatar ? "#ECE8E1" : `linear-gradient(135deg, ${PRIMARY}, ${PRIMARY_SOFT})` }}>
-              {currentUser?.avatar ? <img src={currentUser.avatar} alt="avatar" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = "none"; }} /> : <User size={32} color="#fff" />}
+            <div className="rounded-full overflow-hidden flex items-center justify-center" style={{ width: 84, height: 84, border: "3px solid #FAF8F5", background: currentUser?.avatar_url ? "#ECE8E1" : `linear-gradient(135deg, ${PRIMARY}, ${PRIMARY_SOFT})` }}>
+              {currentUser?.avatar_url ? <img src={currentUser.avatar_url} alt="avatar" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = "none"; }} /> : <User size={32} color="#fff" />}
             </div>
             <button 
               onClick={() => avatarInputRef.current && avatarInputRef.current.click()}
@@ -1018,7 +1019,7 @@ function ProfileView() {
           ) : (
             <>
               <p className="text-xs" style={{ color: "#A9A6B4", fontFamily: "Prompt, sans-serif" }}>
-                @{currentUser?.memberId || "user"} · {currentUser?.role === "member" ? (unitLabel(currentUser?.unit || "")) : "แฟนคลับ"}
+                @{currentUser?.memberId || "user"} · {currentUser?.role === "member" ? (unitLabel(currentUser?.unit || "")) : "Fanclub"}
               </p>
               <button
                 onClick={() => { if (canEditMemberId) { setMemberIdDraft(currentUser?.memberId || ""); setEditingMemberId(true); } }}
@@ -1305,7 +1306,8 @@ function MainApp() {
 
 /* ---------- App root: provides state + switches Auth <-> MainApp ---------- */
 function App() {
-  const { currentUser, loading, register: supabaseRegister, login: supabaseLogin, logout } = useSupabaseAuth();
+  const { currentUser, loading, register: supabaseRegister, login: supabaseLogin, logout, uploadProfileImage, useUserProfile } = useSupabaseAuth();
+  const { profile, profileLoading } = useUserProfile(currentUser?.id);
   
   const [currentUserState, setCurrentUserState] = useState(null);
   const [users, setUsers] = useState([]);
@@ -1316,23 +1318,44 @@ function App() {
   const [openComments, setOpenComments] = useState({});
   const [drafts, setDrafts] = useState({});
 
-  // Sync Supabase user กับ App state
+  // ✅ Sync profile ที่อัปเดต real-time กับ App state
   useEffect(() => {
-    if (currentUser) {
+    // 🔒 ระหว่างที่ยังโหลด profile ครั้งแรกอยู่ ไม่ต้องทำอะไร
+    // (กันไม่ให้กระพริบไปเป็น fallback ก่อนแล้วค่อยสลับกลับมาเป็นค่าจริง)
+    if (profileLoading) return;
+
+    if (profile) {
+      setCurrentUserState((prev) => ({
+        ...prev,
+        id: profile.uid,
+        email: profile.email,
+        name: profile.displayName || profile.memberName || profile.memberId,
+        memberId: profile.memberId,
+        displayName: profile.displayName || profile.memberName,
+        unit: profile.unit || "",
+        gen: profile.gen || "",
+        role: profile.role || "fan",
+        avatar_url: profile.avatar_url,
+        cover_url: profile.cover_url,
+      }));
+    } else if (currentUser) {
+      // fallback ถ้าโหลดเสร็จแล้วแต่ไม่พบ profile ในตาราง users จริงๆ
       setCurrentUserState({
         id: currentUser.id,
         email: currentUser.email,
-        name: currentUser.displayName || currentUser.email,
-        memberId: currentUser.memberId || "NTL48-" + currentUser.id.slice(0, 8),
-        displayName: currentUser.displayName,
-        unit: currentUser.unit,
-        avatar: currentUser.avatar,
-        cover: currentUser.cover,
+        name: currentUser.email,
+        memberId: "NTL48-" + currentUser.id.slice(0, 8),
+        displayName: currentUser.email,
+        unit: "",
+        gen: "",
+        role: "fan",
+        avatar_url: null,
+        cover_url: null,
       });
     } else {
       setCurrentUserState(null);
     }
-  }, [currentUser]);
+  }, [profile, profileLoading, currentUser]);
 
   const setCurrentUser = (user) => setCurrentUserState(user);
 
@@ -1364,7 +1387,7 @@ function App() {
   const members = useMemo(() => users.filter((u) => u.role === "member"), [users]);
 
   const ctxValue = {
-    users, setUsers, currentUser, setCurrentUser, logout, updateCurrentUser,
+    users, setUsers, currentUser: currentUserState, setCurrentUser, logout, updateCurrentUser,
     posts, setPosts, addPost,
     stories, addStory,
     likes, setLikes, toggleLike,
@@ -1373,13 +1396,14 @@ function App() {
     drafts, setDraft, submitComment,
     members,
     supabaseRegister, supabaseLogin,
+    uploadProfileImage,
   };
 
   return (
     <AppCtx.Provider value={ctxValue}>
       <div className="w-full min-h-screen flex justify-center" style={{ background: "#FFFFFF" }}>
-        {loading && !currentUser ? (
-          // Loading screen ขณะ init auth
+        {loading || (currentUser && !currentUserState) ? (
+          // Loading screen ขณะ init auth หรือรอโหลดโปรไฟล์ให้พร้อมก่อน
           <div className="w-full h-screen flex items-center justify-center flex-col gap-4">
             <div className="w-12 h-12 border-4 border-gray-300 border-t-green-500 rounded-full animate-spin"></div>
             <p style={{ fontFamily: "Prompt, sans-serif", color: "#8B8894" }}>กำลังเข้าสู่ระบบ...</p>
