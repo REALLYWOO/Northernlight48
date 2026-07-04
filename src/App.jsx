@@ -852,6 +852,8 @@ function ProfileView() {
   const [memberIdDraft, setMemberIdDraft] = useState(currentUser.memberId);
   const [uploading, setUploading] = useState(false); // ✅ เพิ่มนี้
   const [uploadError, setUploadError] = useState(null); // ✅ เพิ่มนี้
+  const [savingName, setSavingName] = useState(false);           // ✅ NEW - Track name saving
+  const [savingMemberId, setSavingMemberId] = useState(false);  // ✅ NEW - Track ID saving
   const coverInputRef = useRef(null);
   const avatarInputRef = useRef(null);
 
@@ -906,16 +908,98 @@ function ProfileView() {
     }
   };
 
-  const saveName = () => {
+  const saveName = async () => {
     const v = nameDraft.trim();
-    if (v) updateCurrentUser({ displayName: v });
-    setEditingName(false);
+    if (!v) {
+      setEditingName(false);
+      return;
+    }
+    
+    setSavingName(true);
+    setUploadError(null);
+    
+    try {
+      // ✅ Step 1: Save to Supabase database FIRST
+      const { data, error } = await supabase
+        .from("users")
+        .update({ displayName: v })
+        .eq("uid", currentUser.id)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error("❌ Error saving name:", error);
+        setUploadError(`ไม่สามารถบันทึกชื่อได้: ${error.message}`);
+        return;
+      }
+      
+      console.log("✅ ชื่อถูกบันทึกเรียบร้อย");
+      
+      // ✅ Step 2: Update local state with database response
+      if (data) {
+        updateCurrentUser(data);
+      }
+      
+      setEditingName(false);
+    } catch (err) {
+      console.error("❌ Error saving name:", err);
+      setUploadError(`เกิดข้อผิดพลาด: ${err.message}`);
+    } finally {
+      setSavingName(false);
+    }
   };
 
-  const saveMemberId = () => {
+  const saveMemberId = async () => {
     const v = memberIdDraft.trim();
-    if (v && canEditMemberId) updateCurrentUser({ memberId: v, memberIdUpdatedAt: Date.now() });
-    setEditingMemberId(false);
+    
+    if (!v) {
+      setEditingMemberId(false);
+      return;
+    }
+    
+    if (!canEditMemberId) {
+      console.warn("Cannot edit memberId - 14 day cooldown not passed");
+      setEditingMemberId(false);
+      return;
+    }
+    
+    setSavingMemberId(true);
+    setUploadError(null);
+    
+    try {
+      const now = Date.now();
+      
+      // ✅ Step 1: Save to Supabase database FIRST
+      const { data, error } = await supabase
+        .from("users")
+        .update({ 
+          memberId: v, 
+          memberIdUpdatedAt: now 
+        })
+        .eq("uid", currentUser.id)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error("❌ Error saving memberId:", error);
+        setUploadError(`ไม่สามารถบันทึก ID ได้: ${error.message}`);
+        return;
+      }
+      
+      console.log("✅ ID ถูกบันทึกเรียบร้อย");
+      
+      // ✅ Step 2: Update local state with database response
+      if (data) {
+        updateCurrentUser(data);
+      }
+      
+      setEditingMemberId(false);
+    } catch (err) {
+      console.error("❌ Error saving memberId:", err);
+      setUploadError(`เกิดข้อผิดพลาด: ${err.message}`);
+    } finally {
+      setSavingMemberId(false);
+    }
   };
 
   const myPosts = posts.filter((p) => p.authorId === currentUser.id);
@@ -984,13 +1068,31 @@ function ProfileView() {
             <>
               <input
                 autoFocus
+                disabled={savingName}
                 value={nameDraft}
                 onChange={(e) => setNameDraft(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && saveName()}
+                onKeyDown={(e) => e.key === "Enter" && !savingName && saveName()}
                 className="text-base font-bold rounded-lg px-2 py-1 outline-none"
-                style={{ fontFamily: "Prompt, sans-serif", color: "#1A1A1E", background: "#F3F0EA", border: `1.5px solid ${PRIMARY}` }}
+                style={{ 
+                  fontFamily: "Prompt, sans-serif", 
+                  color: "#1A1A1E", 
+                  background: "#F3F0EA", 
+                  border: `1.5px solid ${PRIMARY}`,
+                  opacity: savingName ? 0.6 : 1
+                }}
               />
-              <button onClick={saveName} className="rounded-full p-1.5" style={{ background: PRIMARY }}><Check size={13} color="#fff" /></button>
+              <button 
+                onClick={saveName} 
+                disabled={savingName}
+                className="rounded-full p-1.5" 
+                style={{ 
+                  background: PRIMARY,
+                  opacity: savingName ? 0.6 : 1,
+                  cursor: savingName ? "not-allowed" : "pointer"
+                }}
+              >
+                <Check size={13} color="#fff" />
+              </button>
             </>
           ) : (
             <>
@@ -1008,13 +1110,31 @@ function ProfileView() {
               <span className="text-xs" style={{ color: "#A9A6B4", fontFamily: "Prompt, sans-serif" }}>@</span>
               <input
                 autoFocus
+                disabled={savingMemberId}
                 value={memberIdDraft}
                 onChange={(e) => setMemberIdDraft(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && saveMemberId()}
+                onKeyDown={(e) => e.key === "Enter" && !savingMemberId && saveMemberId()}
                 className="text-xs font-medium rounded-lg px-2 py-1 outline-none"
-                style={{ fontFamily: "Prompt, sans-serif", color: "#1A1A1E", background: "#F3F0EA", border: `1.5px solid ${PRIMARY}` }}
+                style={{ 
+                  fontFamily: "Prompt, sans-serif", 
+                  color: "#1A1A1E", 
+                  background: "#F3F0EA", 
+                  border: `1.5px solid ${PRIMARY}`,
+                  opacity: savingMemberId ? 0.6 : 1
+                }}
               />
-              <button onClick={saveMemberId} className="rounded-full p-1" style={{ background: PRIMARY }}><Check size={11} color="#fff" /></button>
+              <button 
+                onClick={saveMemberId} 
+                disabled={savingMemberId}
+                className="rounded-full p-1" 
+                style={{ 
+                  background: PRIMARY,
+                  opacity: savingMemberId ? 0.6 : 1,
+                  cursor: savingMemberId ? "not-allowed" : "pointer"
+                }}
+              >
+                <Check size={11} color="#fff" />
+              </button>
             </>
           ) : (
             <>
@@ -1024,7 +1144,11 @@ function ProfileView() {
               <button
                 onClick={() => { if (canEditMemberId) { setMemberIdDraft(currentUser?.memberId || ""); setEditingMemberId(true); } }}
                 title={canEditMemberId ? "แก้ไข Member ID" : `แก้ไขได้อีกครั้งในอีก ${daysUntilMemberIdEdit} วัน`}
-                style={{ color: canEditMemberId ? "#A9A6B4" : "#D8D5CE" }}
+                style={{ 
+                  color: canEditMemberId ? "#A9A6B4" : "#D8D5CE",
+                  cursor: canEditMemberId ? "pointer" : "not-allowed",
+                  opacity: canEditMemberId ? 1 : 0.5
+                }}
               >
                 <Pencil size={11} />
               </button>
