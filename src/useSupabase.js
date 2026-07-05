@@ -107,6 +107,59 @@ export const useSupabaseAuth = () => {
     }
   };
 
+  // ✅ ดึงข้อมูลผู้ใช้ทั้งหมด
+  const fetchAllUsers = async () => {
+    try {
+      const { data, error: err } = await supabase
+        .from("users")
+        .select("*")
+        .order("createdAt", { ascending: false });
+
+      if (err) {
+        console.error("Error fetching users:", err);
+        return [];
+      }
+
+      return data || [];
+    } catch (err) {
+      console.error("Fetch users error:", err);
+      return [];
+    }
+  };
+
+  // ✅ Hook สำหรับ Real-time listener ของทั้งตาราง users
+  const useRealtimeUsers = (onUpdate) => {
+    useEffect(() => {
+      // ดึงข้อมูลครั้งแรก
+      fetchAllUsers().then((initialUsers) => {
+        onUpdate(initialUsers);
+      });
+
+      // ตั้ง Real-time listener
+      const channel = supabase
+        .channel("user-table-changes")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "users",
+          },
+          async (payload) => {
+            console.log("🔄 Users table updated:", payload);
+            // เมื่อมีการเปลี่ยนแปลง ให้ดึงข้อมูลทั้งหมดใหม่
+            const updatedUsers = await fetchAllUsers();
+            onUpdate(updatedUsers);
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }, [onUpdate]);
+  };
+
   // ✅ Hook ดึง user profile จาก users table + Real-time listener
   const useUserProfile = (uid) => {
     const [profile, setProfile] = useState(null);
@@ -177,5 +230,16 @@ export const useSupabaseAuth = () => {
     return { profile, profileLoading };
   };
 
-  return { currentUser, loading, error, register, login, logout, uploadProfileImage, useUserProfile };
+  return { 
+    currentUser, 
+    loading, 
+    error, 
+    register, 
+    login, 
+    logout, 
+    uploadProfileImage, 
+    useUserProfile,
+    fetchAllUsers,
+    useRealtimeUsers,
+  };
 };

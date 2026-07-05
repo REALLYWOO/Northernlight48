@@ -1441,7 +1441,7 @@ function MainApp() {
 
 /* ---------- App root: provides state + switches Auth <-> MainApp ---------- */
 function App() {
-  const { currentUser, loading, register: supabaseRegister, login: supabaseLogin, logout, uploadProfileImage, useUserProfile } = useSupabaseAuth();
+  const { currentUser, loading, register: supabaseRegister, login: supabaseLogin, logout, uploadProfileImage, useUserProfile, useRealtimeUsers } = useSupabaseAuth();
   const { profile, profileLoading } = useUserProfile(currentUser?.id);
   
   const [currentUserState, setCurrentUserState] = useState(null);
@@ -1491,6 +1491,29 @@ function App() {
       setCurrentUserState(null);
     }
   }, [profile, profileLoading, currentUser]);
+
+  // ✅ Load all users with real-time updates
+  const handleUsersUpdate = (usersFromDb) => {
+    const transformedUsers = usersFromDb.map((user) => ({
+      id: user.uid, // ✅ Map uid to id for compatibility
+      uid: user.uid,
+      email: user.email,
+      name: user.displayName || user.memberName || user.memberId,
+      memberId: user.memberId,
+      displayName: user.displayName || user.memberName,
+      unit: user.unit || "",
+      gen: user.gen || "",
+      role: user.role || "fan",
+      avatar: user.avatar_url, // ✅ Also provide avatar
+      avatar_url: user.avatar_url,
+      cover_url: user.cover_url,
+      verified: user.role === "member", // ✅ Show verified badge for members
+      createdAt: user.createdAt,
+    }));
+    setUsers(transformedUsers);
+  };
+
+  useRealtimeUsers(handleUsersUpdate);
 
   const setCurrentUser = (user) => setCurrentUserState(user);
 
