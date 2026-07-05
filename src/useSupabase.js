@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 
+// ✅ ใช้ค่า hardcoded โดยตรง (browser environment ไม่มี process object)
 const SUPABASE_URL = "https://cknldqbyybbcmmqqtohm.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNrbmxkcWJ5eWJiY21tcXF0b2htIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwMTM0OTMsImV4cCI6MjA5ODU4OTQ5M30.qu60yuQEVJ03_Xo00SulxXFFYzxN1ITbLVQIeBGsWbs";
 
@@ -101,20 +102,55 @@ export const updatePost = async (postId, updates) => {
   }
 };
 
-// ✅ ดึงข้อมูล posts ทั้งหมด
-const fetchAllPosts = async () => {
+// ✅ ดึงข้อมูล posts ด้วย pagination (⭐ แก้ไขแล้ว)
+const fetchPostsWithPagination = async (limit = 20, offset = 0) => {
   try {
     const { data, error: err } = await supabase
       .from("posts")
-      .select("*")
-      .order("created_at", { ascending: false });
+      .select("id,author_id,caption,images,type,poll,likes,comments,created_at,updated_at", { count: 'exact' })
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);  // ✅ ใช้ range แทน limit
+
+    if (err) {
+      console.error("Error fetching posts:", err);
+      return { posts: [], hasMore: false };
+    }
+
+    // แปลง snake_case กลับไปเป็น camelCase
+    const posts = (data || []).map(p => ({
+      id: p.id,
+      authorId: p.author_id,
+      caption: p.caption,
+      images: p.images || [],
+      type: p.type || "image",
+      poll: p.poll,
+      likes: p.likes || 0,
+      comments: p.comments || [],
+      createdAt: new Date(p.created_at).getTime(),
+      updatedAt: new Date(p.updated_at).getTime(),
+    }));
+
+    return { posts, hasMore: posts.length === limit };
+  } catch (err) {
+    console.error("Fetch posts error:", err);
+    return { posts: [], hasMore: false };
+  }
+};
+
+// ✅ ดึง posts ครั้งแรก (จำนวนน้อย)
+const fetchInitialPosts = async () => {
+  try {
+    const { data, error: err } = await supabase
+      .from("posts")
+      .select("id,author_id,caption,images,type,poll,likes,comments,created_at,updated_at")
+      .order("created_at", { ascending: false })
+      .limit(30);  // ✅ ลดจาก 100 เป็น 30
 
     if (err) {
       console.error("Error fetching posts:", err);
       return [];
     }
 
-    // แปลง snake_case กลับไปเป็น camelCase
     return (data || []).map(p => ({
       id: p.id,
       authorId: p.author_id,
@@ -133,15 +169,26 @@ const fetchAllPosts = async () => {
   }
 };
 
-// ✅ Hook ดึง posts ทั้งหมด + Real-time listener
+// ✅ Hook ดึง posts ทั้งหมด + Real-time listener (⭐ แก้ไขเพื่อไม่ให้ดึงซ้ำ)
 export const useRealtimePosts = (onUpdate) => {
   useEffect(() => {
+    // ✅ Safety check: ถ้า onUpdate ไม่ได้ส่งเข้ามา ให้ return
+    if (!onUpdate || typeof onUpdate !== "function") {
+      console.warn("useRealtimePosts: onUpdate is not a function");
+      return;
+    }
+
+    let isMounted = true;
+
     // ดึงข้อมูล posts ครั้งแรก
-    fetchAllPosts().then((initialPosts) => {
-      onUpdate(initialPosts);
+    fetchInitialPosts().then((initialPosts) => {
+      if (isMounted) {
+        onUpdate(initialPosts);
+      }
     });
 
-    // ตั้ง Real-time listener สำหรับ posts table
+    // ✅ ตั้ง Real-time listener สำหรับ posts table
+    // เมื่อมีการเปลี่ยนแปลง ให้อัปเดตเฉพาะ post ที่เปลี่ยนแปลง (ไม่ดึงทั้งหมดใหม่)
     const channel = supabase
       .channel("posts-table-changes")
       .on(
@@ -151,16 +198,60 @@ export const useRealtimePosts = (onUpdate) => {
           schema: "public",
           table: "posts",
         },
-        async (payload) => {
-          console.log("🔄 Posts table updated:", payload);
-          // เมื่อมีการเปลี่ยนแปลง ให้ดึงข้อมูลทั้งหมดใหม่
-          const updatedPosts = await fetchAllPosts();
-          onUpdate(updatedPosts);
+        (payload) => {
+          if (!isMounted) return;
+          
+          console.log("🔄 Post updated:", payload);
+          
+          // ส่ง payload ให้ component จัดการ (ไม่ดึงทั้งหมด)
+          onUpdate((prev) => {
+            if (payload.eventType === "INSERT") {
+              const newPost = {
+                id: payload.new.id,
+                authorId: payload.new.author_id,
+                caption: payload.new.caption,
+                images: payload.new.images || [],
+                type: payload.new.type || "image",
+                poll: payload.new.poll,
+                likes: payload.new.likes || 0,
+                comments: payload.new.comments || [],
+                createdAt: new Date(payload.new.created_at).getTime(),
+                updatedAt: new Date(payload.new.updated_at).getTime(),
+              };
+              return [newPost, ...prev];
+            }
+            
+            if (payload.eventType === "DELETE") {
+              return prev.filter(p => p.id !== payload.old.id);
+            }
+            
+            if (payload.eventType === "UPDATE") {
+              return prev.map(p => 
+                p.id === payload.new.id 
+                  ? {
+                      id: payload.new.id,
+                      authorId: payload.new.author_id,
+                      caption: payload.new.caption,
+                      images: payload.new.images || [],
+                      type: payload.new.type || "image",
+                      poll: payload.new.poll,
+                      likes: payload.new.likes || 0,
+                      comments: payload.new.comments || [],
+                      createdAt: new Date(payload.new.created_at).getTime(),
+                      updatedAt: new Date(payload.new.updated_at).getTime(),
+                    }
+                  : p
+              );
+            }
+            
+            return prev;
+          });
         }
       )
       .subscribe();
 
     return () => {
+      isMounted = false;
       supabase.removeChannel(channel);
     };
   }, [onUpdate]);
@@ -172,16 +263,25 @@ export const useSupabaseAuth = () => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    let isMounted = true;
+
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setCurrentUser(session?.user || null);
-      setLoading(false);
+      if (isMounted) {
+        setCurrentUser(session?.user || null);
+        setLoading(false);
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      setCurrentUser(session?.user || null);
+      if (isMounted) {
+        setCurrentUser(session?.user || null);
+      }
     });
 
-    return () => subscription?.unsubscribe();
+    return () => {
+      isMounted = false;
+      subscription?.unsubscribe();
+    };
   }, []);
 
   const register = async (email, password, memberId, memberName) => {
@@ -267,13 +367,14 @@ export const useSupabaseAuth = () => {
     }
   };
 
-  // ✅ ดึงข้อมูลผู้ใช้ทั้งหมด
+  // ✅ ดึงข้อมูลผู้ใช้ทั้งหมด (⭐ ลดจำนวนเฉพาะคอลัมน์ที่ต้องการ)
   const fetchAllUsers = async () => {
     try {
       const { data, error: err } = await supabase
         .from("users")
         .select("*")
-        .order("createdAt", { ascending: false });
+        .order("createdAt", { ascending: false })
+        .limit(100);  // ✅ จำกัดจำนวน
 
       if (err) {
         console.error("Error fetching users:", err);
@@ -287,12 +388,22 @@ export const useSupabaseAuth = () => {
     }
   };
 
-  // ✅ Hook สำหรับ Real-time listener ของทั้งตาราง users
+  // ✅ Hook สำหรับ Real-time listener ของทั้งตาราง users (⭐ แก้ไข)
   const useRealtimeUsers = (onUpdate) => {
     useEffect(() => {
+      // ✅ Safety check: ถ้า onUpdate ไม่ได้ส่งเข้ามา ให้ return
+      if (!onUpdate || typeof onUpdate !== "function") {
+        console.warn("useRealtimeUsers: onUpdate is not a function");
+        return;
+      }
+
+      let isMounted = true;
+
       // ดึงข้อมูลครั้งแรก
       fetchAllUsers().then((initialUsers) => {
-        onUpdate(initialUsers);
+        if (isMounted) {
+          onUpdate(initialUsers);
+        }
       });
 
       // ตั้ง Real-time listener
@@ -305,16 +416,30 @@ export const useSupabaseAuth = () => {
             schema: "public",
             table: "users",
           },
-          async (payload) => {
+          (payload) => {
+            if (!isMounted) return;
+
             console.log("🔄 Users table updated:", payload);
-            // เมื่อมีการเปลี่ยนแปลง ให้ดึงข้อมูลทั้งหมดใหม่
-            const updatedUsers = await fetchAllUsers();
-            onUpdate(updatedUsers);
+            
+            // อัปเดตเฉพาะ user ที่เปลี่ยนแปลง (ไม่ดึงทั้งหมด)
+            onUpdate((prev) => {
+              if (payload.eventType === "INSERT") {
+                return [payload.new, ...prev];
+              }
+              if (payload.eventType === "DELETE") {
+                return prev.filter(u => u.uid !== payload.old.uid);
+              }
+              if (payload.eventType === "UPDATE") {
+                return prev.map(u => u.uid === payload.new.uid ? payload.new : u);
+              }
+              return prev;
+            });
           }
         )
         .subscribe();
 
       return () => {
+        isMounted = false;
         supabase.removeChannel(channel);
       };
     }, [onUpdate]);
@@ -326,6 +451,8 @@ export const useSupabaseAuth = () => {
     const [profileLoading, setProfileLoading] = useState(true);
 
     useEffect(() => {
+      let isMounted = true;
+
       if (!uid) {
         setProfile(null);
         setProfileLoading(false);
@@ -341,17 +468,21 @@ export const useSupabaseAuth = () => {
             .eq("uid", uid)
             .single();
 
-          if (err) {
-            console.error("Error loading profile:", err);
-            setProfile(null);
-          } else {
-            setProfile(data);
+          if (isMounted) {
+            if (err) {
+              console.error("Error loading profile:", err);
+              setProfile(null);
+            } else {
+              setProfile(data);
+            }
+            setProfileLoading(false);
           }
         } catch (err) {
-          console.error("Profile load error:", err);
-          setProfile(null);
-        } finally {
-          setProfileLoading(false);
+          if (isMounted) {
+            console.error("Profile load error:", err);
+            setProfile(null);
+            setProfileLoading(false);
+          }
         }
       };
 
@@ -369,6 +500,8 @@ export const useSupabaseAuth = () => {
             filter: `uid=eq.${uid}`,
           },
           (payload) => {
+            if (!isMounted) return;
+
             console.log("🔄 Profile updated:", payload);
 
             if (payload.eventType === "DELETE") {
@@ -383,6 +516,7 @@ export const useSupabaseAuth = () => {
         .subscribe();
 
       return () => {
+        isMounted = false;
         supabase.removeChannel(channel);
       };
     }, [uid]);
@@ -401,5 +535,6 @@ export const useSupabaseAuth = () => {
     useUserProfile,
     fetchAllUsers,
     useRealtimeUsers,
+    fetchPostsWithPagination,  // ✅ export สำหรับ pagination
   };
 };
