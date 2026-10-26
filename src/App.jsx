@@ -1030,7 +1030,7 @@ function CreatePostModal({ open, onClose, onGoLive }) {
               rows={mode === "poll" ? 2 : 4}
               value={text}
               onChange={setText}
-              placeholder={mode === "poll" ? "ถามอะไรดี...  (พิมพ์ @ เพื่อแท็กเมมเบอร์ได้)" : "คุณกำลังคิดอะไรอยู่...  (พิมพ์ @ เพื่อแท็กเมมเบอร์)"}
+              placeholder={mode === "poll" ? "ถามอะไรดี..." : "คุณกำลังคิดอะไรอยู่..."}
               className="w-full bg-transparent outline-none resize-none text-[15px] leading-relaxed"
               style={{ color: "#1A1A1A", ...FONT_P }}
             />
