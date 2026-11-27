@@ -1,4 +1,4 @@
-import { useSupabaseAuth, supabase, savePost, useRealtimePosts, deletePostFromDb, updatePost, fetchRelations, addRelation, removeRelation, fetchCollections, createCollection, updateCollection, deleteCollection, addCards, updateCard, deleteCard, uploadCardImage, fetchMyCards, addOwnedCard, spendStars, refundStars, redeemCode, fetchInitialPosts, fetchPostById, fetchPostsByHashtag, deleteCommentDb, fetchPostLikersDb, notifyMentionsDb, fetchNotifications, markNotificationsRead, fetchTopFansDb, toggleLikeDb, addCommentDb, votePollDb, fetchMyPostActions, fetchActiveStories, createStoryDb, deleteStoryDb, cleanupMyExpiredStories, MAX_ACTIVE_STORIES, toggleStoryLikeDb, fetchMyStoryLikes, recordStoryViewDb, fetchStoryViewersDb, notifyEventDb, savePushSubscriptionDb, removePushSubscriptionDb } from "./useSupabase";
+import { useSupabaseAuth, supabase, savePost, useRealtimePosts, deletePostFromDb, updatePost, fetchRelations, addRelation, removeRelation, fetchCollections, createCollection, updateCollection, deleteCollection, addCards, updateCard, deleteCard, uploadCardImage, fetchMyCards, addOwnedCard, spendStars, refundStars, redeemCode, fetchInitialPosts, fetchPostById, fetchPostsByHashtag, deleteCommentDb, fetchPostLikersDb, notifyMentionsDb, fetchNotifications, markNotificationsRead, fetchTopFansDb, toggleLikeDb, addCommentDb, votePollDb, fetchMyPostActions, fetchActiveStories, createStoryDb, deleteStoryDb, cleanupMyExpiredStories, MAX_ACTIVE_STORIES, toggleStoryLikeDb, fetchMyStoryLikes, recordStoryViewDb, fetchStoryViewersDb } from "./useSupabase";
 import { useEffect } from "react";
 import React, { useState, useRef, useContext, createContext, useMemo, useLayoutEffect } from "react";
 
@@ -1793,50 +1793,21 @@ const hasHashtag = (text, tag) => {
 };
 
 // แสดงข้อความ: @ชื่อเมมเบอร์ และ #แฮชแท็ก เป็นตัวหนาสีแบรนด์ กดแล้วไปโปรไฟล์ / หน้ารวมโพสต์ของแท็กนั้น
-// ลิงก์ในโพสต์/คอมเมนต์: กดเปิดแท็บใหม่ได้ (ลิงก์โพสต์ของแอปเราเองเปิดในแอปเลย)
-const URL_SRC = /(?:https?:\/\/|www\.)[\w\-.~:/?#[\]@!$&'()*+,;=%]+/.source;
-function SafeLink({ url }) {
-  const { openPostDetail } = useCtx();
-  const href = /^https?:\/\//.test(url) ? url : `https://${url}`;
-  const label = url.replace(/^https?:\/\//, "").replace(/\/$/, "");
-  const shown = label.length > 42 ? label.slice(0, 40) + "…" : label;
-  const onClick = (e) => {
-    e.stopPropagation();
-    try {
-      const u = new URL(href);
-      const pid = u.origin === window.location.origin ? u.searchParams.get("post") : null;
-      if (pid) { e.preventDefault(); openPostDetail(pid); }
-    } catch (err) { /* ลิงก์ผิดรูปแบบ ปล่อยให้เบราว์เซอร์จัดการ */ }
-  };
-  return (
-    <a href={href} target="_blank" rel="noopener noreferrer nofollow" title={url} onClick={onClick}
-      className="font-medium" style={{ color: PRIMARY, textDecoration: "underline", wordBreak: "break-all" }}>{shown}</a>
-  );
-}
-
 function MentionText({ text }) {
   const { members } = useCtx();
   const { openProfile, openHashtag } = useNav();
   const parts = useMemo(() => {
-    if (!text || !/[@#]|https?:\/\/|www\./.test(text)) return null;
+    if (!text || (!text.includes("@") && !text.includes("#"))) return null;
     const named = members.filter((m) => m.displayName).sort((a, b) => b.displayName.length - a.displayName.length);
     const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const src = `(${URL_SRC})|` + (named.length ? "@(" + named.map((m) => esc(m.displayName)).join("|") + ")|" : "") + "#(" + HASHTAG_CHARS + ")";
+    const src = (named.length ? "@(" + named.map((m) => esc(m.displayName)).join("|") + ")|" : "") + "#(" + HASHTAG_CHARS + ")";
     const re = new RegExp(src, "gu");
     const out = [];
     let last = 0;
     for (const m of text.matchAll(re)) {
       if (m.index > last) out.push({ text: text.slice(last, m.index) });
-      if (m[1]) {
-        // เครื่องหมายท้ายลิงก์ เช่น . , ) ไม่นับเป็นส่วนของลิงก์
-        let url = m[1];
-        const trail = url.match(/[.,!?;:)\]}'"]+$/);
-        const tail = trail ? trail[0] : "";
-        if (tail) url = url.slice(0, -tail.length);
-        if (url.length > 4) out.push({ url }); else out.push({ text: url });
-        if (tail) out.push({ text: tail });
-      } else if (named.length && m[0].startsWith("@")) out.push({ name: m[2], member: named.find((x) => x.displayName === m[2]) });
-      else out.push({ tag: named.length ? m[3] : m[2] });
+      if (named.length && m[0].startsWith("@")) out.push({ name: m[1], member: named.find((x) => x.displayName === m[1]) });
+      else out.push({ tag: named.length ? m[2] : m[1] });
       last = m.index + m[0].length;
     }
     if (last < text.length) out.push({ text: text.slice(last) });
@@ -1845,13 +1816,11 @@ function MentionText({ text }) {
   if (!parts) return <>{text}</>;
   return (
     <>
-      {parts.map((pt, i) => pt.url
-        ? <SafeLink key={i} url={pt.url} />
-        : pt.member
-          ? <span key={i} onClick={(e) => { e.stopPropagation(); openProfile(pt.member.id); }} className="font-semibold cursor-pointer" style={{ color: PRIMARY }}>@{pt.name}</span>
-          : pt.tag
-            ? <span key={i} onClick={(e) => { e.stopPropagation(); openHashtag(pt.tag); }} className="font-semibold cursor-pointer" style={{ color: PRIMARY }}>#{pt.tag}</span>
-            : <React.Fragment key={i}>{pt.text !== undefined ? pt.text : (pt.name ? `@${pt.name}` : "")}</React.Fragment>)}
+      {parts.map((pt, i) => pt.member
+        ? <span key={i} onClick={(e) => { e.stopPropagation(); openProfile(pt.member.id); }} className="font-semibold cursor-pointer" style={{ color: PRIMARY }}>@{pt.name}</span>
+        : pt.tag
+          ? <span key={i} onClick={(e) => { e.stopPropagation(); openHashtag(pt.tag); }} className="font-semibold cursor-pointer" style={{ color: PRIMARY }}>#{pt.tag}</span>
+          : <React.Fragment key={i}>{pt.text}</React.Fragment>)}
     </>
   );
 }
@@ -2012,7 +1981,7 @@ function ExpandableCaption({ text, detail }) {
 }
 
 function PostCard({ post, detail = false }) {
-  const { users, currentUser, likes, saved, drafts, toggleLike, toggleSave, setDraft, submitComment, deletePost, editPostModal, openPostDetail, openLikers, sharePost } = useCtx();
+  const { users, currentUser, likes, saved, drafts, toggleLike, toggleSave, setDraft, submitComment, deletePost, editPostModal, openPostDetail, openLikers } = useCtx();
   const { openProfile } = useNav();
   const [showMenu, setShowMenu] = useState(false);
   const timeAgo = useFrozenTimeAgo(post.createdAt);
@@ -2089,7 +2058,7 @@ function PostCard({ post, detail = false }) {
           <MessageCircle size={22} />
           <span className="text-sm">{fmt(comments.length)}</span>
         </button>
-        <button onClick={(e) => { e.stopPropagation(); sharePost(post); }} className="flex items-center gap-1.5 ml-auto active:scale-90 transition-transform" style={{ color: "#5A5A5A" }} aria-label="แชร์โพสต์"><Send size={20} /></button>
+        <button className="flex items-center gap-1.5 ml-auto" style={{ color: "#5A5A5A" }}><Send size={20} /></button>
         <button onClick={() => toggleSave(post.id)} className="active:scale-90 transition-transform">
           <Bookmark size={21} color={isSaved ? color : "#5A5A5A"} fill={isSaved ? color : "none"} />
         </button>
@@ -2846,191 +2815,6 @@ function SearchView({ query, setQuery, onBack }) {
   );
 }
 
-/* ---------- แจ้งเตือนบนหน้าจอเครื่อง (Web Push) ---------- */
-// ⚠️ ใส่ VAPID Public Key ของคุณตรงนี้ (สร้างด้วย `npx web-push generate-vapid-keys` — ดู PUSH_SETUP.md)
-const VAPID_PUBLIC_KEY = "BO-X5CX-wqv5UiB--EbCpzNZCv-50Eq6nnUIBeQNWOwTo80dkguUqitvM6_gzsqYk5o0FRkr2YqqdGgL-8rhsdI";
-const pushConfigured = () => !!VAPID_PUBLIC_KEY && !VAPID_PUBLIC_KEY.startsWith("PASTE");
-const isIOSDevice = () => typeof navigator !== "undefined" && (/iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
-const isStandalone = () => typeof window !== "undefined" && ((window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true);
-const b64ToUint8 = (b64) => {
-  const pad = "=".repeat((4 - (b64.length % 4)) % 4);
-  const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
-  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
-};
-const ensureServiceWorker = async () => {
-  await navigator.serviceWorker.register("/sw.js");
-  return navigator.serviceWorker.ready;
-};
-
-function usePush(userId) {
-  const supported = typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
-  const [permission, setPermission] = useState(() => (supported ? Notification.permission : "unsupported"));
-  const [subscribed, setSubscribed] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  // เคยอนุญาตแล้ว → ผูก subscription ของเครื่องนี้กับบัญชีที่ล็อกอินอยู่ (กรณีสลับบัญชี/ล้างข้อมูล)
-  useEffect(() => {
-    if (!supported || !userId || !pushConfigured()) { setSubscribed(false); return; }
-    if (Notification.permission !== "granted") { setSubscribed(false); return; }
-    let dead = false;
-    (async () => {
-      try {
-        const reg = await ensureServiceWorker();
-        let sub = await reg.pushManager.getSubscription();
-        if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToUint8(VAPID_PUBLIC_KEY) });
-        await savePushSubscriptionDb(sub);
-        if (!dead) setSubscribed(true);
-      } catch (err) {
-        console.error("push sync failed:", err);
-        if (!dead) setSubscribed(false);
-      }
-    })();
-    return () => { dead = true; };
-  }, [userId, supported]);
-
-  const enable = async () => {
-    if (!supported || busy) return false;
-    setBusy(true);
-    try {
-      const perm = await Notification.requestPermission();
-      setPermission(perm);
-      if (perm !== "granted") return false;
-      const reg = await ensureServiceWorker();
-      let sub = await reg.pushManager.getSubscription();
-      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToUint8(VAPID_PUBLIC_KEY) });
-      await savePushSubscriptionDb(sub);
-      setSubscribed(true);
-      return true;
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const disable = async () => {
-    setBusy(true);
-    try {
-      const reg = await navigator.serviceWorker.getRegistration("/");
-      const sub = reg && (await reg.pushManager.getSubscription());
-      if (sub) { await removePushSubscriptionDb(sub.endpoint); await sub.unsubscribe(); }
-      setSubscribed(false);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // ตอนออกจากระบบ: เลิกผูกเครื่องนี้กับบัญชี (ไม่ยกเลิกสิทธิ์ของเบราว์เซอร์) — คนอื่นที่ล็อกอินต่อจะไม่ได้รับแจ้งเตือนของเรา
-  const detachDevice = async () => {
-    try {
-      if (!supported) return;
-      const reg = await navigator.serviceWorker.getRegistration("/");
-      const sub = reg && (await reg.pushManager.getSubscription());
-      if (sub) await removePushSubscriptionDb(sub.endpoint);
-    } catch (err) { console.error("push detach failed:", err); }
-  };
-
-  return { supported, permission, subscribed, busy, enable, disable, detachDevice };
-}
-
-// การ์ดเปิด/ปิดแจ้งเตือนบนหน้าจอ (แสดงในหน้าแจ้งเตือน)
-function PushSettingsCard() {
-  const { push, ui } = useCtx();
-  if (!pushConfigured()) return null;
-  const FONT_P = { fontFamily: "Prompt, sans-serif" };
-  const box = { background: "#F7F7F7", border: "1px solid #E8E8E8" };
-
-  if (!push.supported) {
-    const needInstall = isIOSDevice() && !isStandalone();
-    return (
-      <div className="rounded-xl p-3.5 mb-1" style={box}>
-        <p className="text-[13px] font-semibold mb-0.5" style={{ color: "#1A1A1A", ...FONT_P }}>แจ้งเตือนบนหน้าจอ</p>
-        <p className="text-[12px]" style={{ color: "#8A8A8A", ...FONT_P }}>
-          {needInstall
-            ? "บน iPhone/iPad ต้องเพิ่มแอปลงหน้าจอโฮมก่อน: เปิดเว็บนี้ใน Safari → กดปุ่มแชร์ → เลือก “เพิ่มลงหน้าจอโฮม” แล้วเปิดแอปจากไอคอน จากนั้นกลับมากดเปิดแจ้งเตือนที่นี่"
-            : "เบราว์เซอร์นี้ยังไม่รองรับการแจ้งเตือนบนหน้าจอ ลองใช้ Chrome / Edge / Safari เวอร์ชันล่าสุด"}
-        </p>
-      </div>
-    );
-  }
-  if (push.permission === "denied") {
-    return (
-      <div className="rounded-xl p-3.5 mb-1" style={box}>
-        <p className="text-[13px] font-semibold mb-0.5" style={{ color: "#1A1A1A", ...FONT_P }}>แจ้งเตือนบนหน้าจอถูกปิดกั้นอยู่</p>
-        <p className="text-[12px]" style={{ color: "#8A8A8A", ...FONT_P }}>เปิดสิทธิ์การแจ้งเตือนของเว็บนี้ในการตั้งค่าเบราว์เซอร์/เครื่อง แล้วรีเฟรชหน้านี้</p>
-      </div>
-    );
-  }
-  const toggle = async () => {
-    try {
-      if (push.subscribed) await push.disable();
-      else await push.enable();
-    } catch (err) {
-      console.error("push toggle failed:", err);
-      ui.alert({ title: "ตั้งค่าแจ้งเตือนไม่สำเร็จ", message: `${err?.message || "ลองใหม่อีกครั้งนะ"}`, danger: true });
-    }
-  };
-  return (
-    <div className="rounded-xl p-3.5 mb-1 flex items-center gap-3" style={{ ...box, background: push.subscribed ? "#EEF6F2" : "#F7F7F7" }}>
-      <div className="rounded-full flex items-center justify-center flex-shrink-0" style={{ width: 38, height: 38, background: push.subscribed ? PRIMARY : "#E8E8E8" }}>
-        <Bell size={18} color={push.subscribed ? "#fff" : "#5A5A5A"} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-[13px] font-semibold" style={{ color: "#1A1A1A", ...FONT_P }}>{push.subscribed ? "แจ้งเตือนบนหน้าจอเปิดอยู่" : "เปิดแจ้งเตือนบนหน้าจอ"}</p>
-        <p className="text-[12px]" style={{ color: "#8A8A8A", ...FONT_P }}>{push.subscribed ? "จะเด้งเมื่อมีคนแท็ก ไลก์ หรือคอมเมนต์" : "รับแจ้งเตือนแม้ไม่ได้เปิดแอปอยู่"}</p>
-      </div>
-      <button onClick={toggle} disabled={push.busy} className="px-3.5 py-1.5 rounded-full text-xs font-semibold flex-shrink-0"
-        style={{ background: push.subscribed ? "#E8E8E8" : PRIMARY, color: push.subscribed ? "#3A3A3A" : "#fff", opacity: push.busy ? 0.6 : 1, ...FONT_P }}>
-        {push.busy ? "..." : push.subscribed ? "ปิด" : "เปิด"}
-      </button>
-    </div>
-  );
-}
-
-// ข้อความ/ไอคอนของแจ้งเตือนแต่ละประเภท
-const notifMeta = (type) => {
-  switch (type) {
-    case "mention_comment": return { text: "แท็กคุณในคอมเมนต์", icon: "at" };
-    case "like_post": return { text: "ถูกใจโพสต์ของคุณ", icon: "star" };
-    case "comment_post": return { text: "แสดงความคิดเห็นในโพสต์ของคุณ", icon: "comment" };
-    case "reply_comment": return { text: "ตอบกลับคอมเมนต์ของคุณ", icon: "comment" };
-    default: return { text: "แท็กคุณในโพสต์", icon: "at" };
-  }
-};
-
-// แบนเนอร์แจ้งเตือนเด้งด้านบนจอ ตอนเปิดแอปอยู่
-function NotifBanner() {
-  const { banner, dismissBanner, users, openPostDetail } = useCtx();
-  if (!banner) return null;
-  const actor = users.find((u) => u.id === banner.actor_id);
-  if (!actor) return null;
-  const meta = notifMeta(banner.type);
-  return (
-    <div className="fixed left-0 right-0 z-[110] flex justify-center px-3 pointer-events-none" style={{ top: "calc(env(safe-area-inset-top, 0px) + 8px)" }}>
-      <style>{"@keyframes ntlBannerIn{from{transform:translateY(-120%);opacity:0}to{transform:translateY(0);opacity:1}}"}</style>
-      <div role="button" onClick={() => { dismissBanner(); if (banner.post_id) openPostDetail(String(banner.post_id)); }}
-        className="pointer-events-auto w-full max-w-md rounded-2xl p-3 flex items-center gap-3 cursor-pointer"
-        style={{ background: "rgba(255,255,255,0.97)", boxShadow: "0 8px 28px rgba(0,0,0,0.22)", border: "1px solid #E8E8E8", animation: "ntlBannerIn 280ms ease-out", fontFamily: "Prompt, sans-serif" }}>
-        <Avatar user={actor} size={38} />
-        <div className="flex-1 min-w-0">
-          <p className="text-[13px] truncate" style={{ color: "#1A1A1A" }}><span className="font-semibold">{actor.displayName}</span> {meta.text}</p>
-          {banner.snippet && <p className="text-[12px] truncate" style={{ color: "#8A8A8A" }}>{banner.snippet}</p>}
-        </div>
-        <button onClick={(e) => { e.stopPropagation(); dismissBanner(); }} aria-label="ปิด" style={{ color: "#A8A8A8" }}><X size={16} /></button>
-      </div>
-    </div>
-  );
-}
-
-// ข้อความสั้นๆ ที่ลอยขึ้นมา (เช่น "คัดลอกลิงก์แล้ว")
-function AppToast() {
-  const { toast } = useCtx();
-  if (!toast) return null;
-  return (
-    <div className="fixed left-0 right-0 z-[120] flex justify-center pointer-events-none" style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 88px)" }}>
-      <div className="px-4 py-2.5 rounded-full text-[13px] font-semibold" style={{ background: "rgba(26,26,26,0.92)", color: "#fff", fontFamily: "Prompt, sans-serif", boxShadow: "0 6px 20px rgba(0,0,0,0.25)" }}>{toast}</div>
-    </div>
-  );
-}
-
 /* ---------- Notifications (derived from real member posts) ---------- */
 function NotificationsView() {
   const { posts, users, openPostDetail, notifs, markAllNotifsRead } = useCtx();
@@ -3039,7 +2823,7 @@ function NotificationsView() {
 
   const items = [
     // ถูกแท็ก
-    ...notifs.map((n) => ({ key: `n${n.id}`, kind: "mention", actor: users.find((u) => u.id === n.actor_id), postId: n.post_id, snippet: n.snippet, meta: notifMeta(n.type), at: new Date(n.created_at).getTime(), unread: !n.read })),
+    ...notifs.map((n) => ({ key: `n${n.id}`, kind: "mention", actor: users.find((u) => u.id === n.actor_id), postId: n.post_id, snippet: n.snippet, isComment: n.type === "mention_comment", at: new Date(n.created_at).getTime(), unread: !n.read })),
     // เมมเบอร์โพสต์ใหม่
     ...posts
       .filter((p) => users.find((u) => u.id === p.authorId)?.role === "member")
@@ -3050,7 +2834,6 @@ function NotificationsView() {
   return (
     <div className="px-4 py-4 flex flex-col gap-3">
       <h2 className="text-xl font-semibold mb-1" style={{ fontFamily: "Prompt, sans-serif", color: "#1A1A1A" }}>การแจ้งเตือน</h2>
-      <PushSettingsCard />
       {items.length === 0 && (
         <p className="text-sm text-center py-10" style={{ color: "#A8A8A8", fontFamily: "Prompt, sans-serif" }}>ยังไม่มีการแจ้งเตือน</p>
       )}
@@ -3061,12 +2844,12 @@ function NotificationsView() {
             <p className="text-[14px]" style={{ color: "#1A1A1A", fontFamily: "Prompt, sans-serif" }}>
               <NameWithBadge name={it.actor.displayName} verified={it.actor.role === "member"} size={13} />{" "}
               <span className="font-normal">
-                {it.kind === "mention" ? it.meta.text : "ได้โพสต์อัปเดตใหม่"}
+                {it.kind === "mention" ? (it.isComment ? "แท็กคุณในคอมเมนต์" : "แท็กคุณในโพสต์") : "ได้โพสต์อัปเดตใหม่"}
               </span>
             </p>
             {it.snippet && <p className="text-[12px] mt-0.5 truncate" style={{ color: "#A8A8A8", fontFamily: "Prompt, sans-serif" }}>{it.snippet}</p>}
           </div>
-          {it.kind === "mention" && (it.meta.icon === "star" ? <Star size={16} color={PRIMARY} fill={PRIMARY} /> : it.meta.icon === "comment" ? <MessageCircle size={16} color={PRIMARY} /> : <AtSign size={16} color={PRIMARY} />)}
+          {it.kind === "mention" && <AtSign size={16} color={PRIMARY} />}
         </div>
       ))}
     </div>
@@ -3106,7 +2889,7 @@ function UserProfileView({ userId }) {
         <p className="text-xs mb-1.5" style={labelStyle}>
           {isMember ? unitLabel(target.unit) : "Fanclub"}{isMember && target.gen ? ` · ${target.gen}` : ""}
         </p>
-        {target.bio ? <p className="text-sm mb-3" style={{ color: "#3A3A3A", fontFamily: "Prompt, sans-serif", whiteSpace: "pre-wrap", wordBreak: "break-word" }}><MentionText text={target.bio} /></p> : <div className="mb-2" />}
+        {target.bio ? <p className="text-sm mb-3" style={{ color: "#3A3A3A", fontFamily: "Prompt, sans-serif", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{target.bio}</p> : <div className="mb-2" />}
 
         {canGive && (
           <div className="flex items-center gap-2 mb-4">
@@ -5250,8 +5033,6 @@ function MainApp() {
       <EditPostModalWrapper />
       <PostDetailModal />
       <LikersModal />
-      <NotifBanner />
-      <AppToast />
       <LiveStageModal open={liveOpen} onClose={() => setLiveOpen(false)} />
       <ProfileMenuModal open={menuOpen && currentUser?.role === "member"} onClose={() => setMenuOpen(false)} onGoCollection={() => setView("gacha")} />
     </div>
@@ -5340,41 +5121,6 @@ function App() {
   const [myVotes, setMyVotes] = useState({}); // { postId: label ที่ฉันโหวต }
   const [detailPostId, setDetailPostId] = useState(null); // โพสต์ที่เปิดดูแบบเต็ม
   const [notifs, setNotifs] = useState([]); // แจ้งเตือนการถูกแท็ก
-  const [feedReady, setFeedReady] = useState(false); // โหลดฟีดรอบแรกเสร็จแล้ว
-  const [toast, setToast] = useState(null);
-  const toastTimer = useRef(null);
-  const showToast = (msg) => {
-    setToast(msg);
-    clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 2200);
-  };
-  const [banner, setBanner] = useState(null); // แบนเนอร์แจ้งเตือนในแอป
-  const bannerTimer = useRef(null);
-  const dismissBanner = () => { clearTimeout(bannerTimer.current); setBanner(null); };
-  const push = usePush(currentUser?.id);
-  const pushRef = useRef(push);
-  pushRef.current = push;
-  const openPostRef = useRef(null);
-  const showBanner = (n) => {
-    if (typeof document !== "undefined" && document.visibilityState !== "visible") return; // ไม่ได้ดูจอ → ให้ Push แจ้งแทน
-    if (isIOSDevice() && pushRef.current && pushRef.current.subscribed) return; // iOS แสดง Push เองเสมอ ไม่ต้องซ้ำ
-    setBanner(n);
-    clearTimeout(bannerTimer.current);
-    bannerTimer.current = setTimeout(() => setBanner(null), 5000);
-  };
-  const showBannerRef = useRef(showBanner);
-  showBannerRef.current = showBanner;
-  // ลิงก์แชร์ /?post=ID → จำไว้แล้วเปิดโพสต์นั้นหลังล็อกอิน (เก็บใน sessionStorage เผื่อต้องล็อกอินก่อน)
-  const [pendingPost, setPendingPost] = useState(() => {
-    try {
-      const pid = new URLSearchParams(window.location.search).get("post");
-      if (pid) {
-        sessionStorage.setItem("ntl_pending_post", pid);
-        window.history.replaceState(null, "", window.location.pathname + window.location.hash);
-      }
-      return sessionStorage.getItem("ntl_pending_post");
-    } catch (e) { return null; }
-  });
   const [saved, setSaved] = useState({});
   const [openComments, setOpenComments] = useState({});
   const [drafts, setDrafts] = useState({});
@@ -5428,10 +5174,7 @@ function App() {
     const ch = supabase
       .channel(`notifs-${currentUser.id}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${currentUser.id}` },
-        (payload) => {
-          setNotifs((prev) => (prev.some((n) => n.id === payload.new.id) ? prev : [payload.new, ...prev]));
-          showBannerRef.current(payload.new);
-        })
+        (payload) => setNotifs((prev) => (prev.some((n) => n.id === payload.new.id) ? prev : [payload.new, ...prev])))
       .subscribe();
     return () => { cancelled = true; supabase.removeChannel(ch); };
   }, [currentUser?.id]);
@@ -5636,7 +5379,6 @@ function App() {
       const r = await toggleLikeDb(id);
       setLikes((prev) => ({ ...prev, [id]: { liked: r.liked } }));
       patchPost(id, (p) => ({ ...p, likes: r.count }));
-      if (r.liked) notifyEventDb(id, "like"); // แจ้งเจ้าของโพสต์
     } catch (err) {
       console.error("toggleLike failed:", err);
       setLikes((prev) => ({ ...prev, [id]: { liked: wasLiked } }));
@@ -5696,7 +5438,6 @@ function App() {
       const saved = await addCommentDb(id, text, parentId);
       patchPost(id, (p) => ({ ...p, comments: (p.comments || []).map((c) => (c === temp ? (saved || { ...temp, pending: false }) : c)) }));
       notifyMentionsDb(id, extractMentionIds(text, members), text, "comment");
-      if (saved && saved.id) notifyEventDb(id, "comment", saved.id); // แจ้งเจ้าของโพสต์ / เจ้าของคอมเมนต์ที่ถูกตอบ
     } catch (err) {
       console.error("submitComment failed:", err);
       patchPost(id, (p) => ({ ...p, comments: (p.comments || []).filter((c) => c !== temp) }));
@@ -5730,7 +5471,6 @@ function App() {
   // ✅ อัปเดต posts จาก Supabase (real-time listener)
   const handlePostsUpdate = (postsFromDb) => {
     setPosts(postsFromDb);
-    if (Array.isArray(postsFromDb)) setFeedReady(true);
   };
   
   useRealtimePosts(handlePostsUpdate);
@@ -5830,58 +5570,6 @@ function App() {
     }
   };
 
-  openPostRef.current = openPostDetail;
-
-  // เปิดโพสต์จากลิงก์แชร์ (รอให้ล็อกอินและโหลดฟีดรอบแรกเสร็จก่อน กันฟีดมาทับโพสต์ที่ดึงมาเดี่ยวๆ)
-  useEffect(() => {
-    if (!pendingPost || !currentUser?.id || !feedReady) return;
-    openPostRef.current && openPostRef.current(String(pendingPost));
-    setPendingPost(null);
-    try { sessionStorage.removeItem("ntl_pending_post"); } catch (e) { /* ignore */ }
-  }, [pendingPost, currentUser?.id, feedReady]);
-
-  // กดแจ้งเตือนบนหน้าจอตอนแอปเปิดอยู่แล้ว → Service Worker ส่งข้อความมาให้เปิดโพสต์
-  useEffect(() => {
-    if (!("serviceWorker" in navigator)) return;
-    const onMsg = (e) => {
-      if (e.data && e.data.type === "open-post" && e.data.postId) openPostRef.current && openPostRef.current(String(e.data.postId));
-    };
-    navigator.serviceWorker.addEventListener("message", onMsg);
-    return () => navigator.serviceWorker.removeEventListener("message", onMsg);
-  }, []);
-
-  // แชร์โพสต์: มือถือ/เบราว์เซอร์ที่รองรับ → เปิดหน้าแชร์ของระบบ / ไม่รองรับ → คัดลอกลิงก์
-  const sharePost = async (post) => {
-    if (!post) return;
-    const url = `${window.location.origin}/?post=${encodeURIComponent(post.id)}`;
-    const author = users.find((u) => u.id === post.authorId);
-    const snippet = String(post.caption || post.poll?.question || "").replace(/\s+/g, " ").trim().slice(0, 80);
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: `โพสต์ของ ${author?.displayName || "NTL48 Member"}`, text: snippet, url });
-        return;
-      } catch (err) {
-        if (err && err.name === "AbortError") return; // ผู้ใช้กดยกเลิกเอง
-      }
-    }
-    try {
-      await navigator.clipboard.writeText(url);
-    } catch (err) {
-      const ta = document.createElement("textarea");
-      ta.value = url; ta.style.position = "fixed"; ta.style.opacity = "0";
-      document.body.appendChild(ta); ta.select();
-      try { document.execCommand("copy"); } catch (e2) { /* ignore */ }
-      document.body.removeChild(ta);
-    }
-    showToast("คัดลอกลิงก์โพสต์แล้ว");
-  };
-
-  // ออกจากระบบ: เลิกผูกเครื่องนี้กับบัญชีก่อน (ไม่ให้แจ้งเตือนของเราไปเด้งให้คนที่ล็อกอินต่อ)
-  const logoutWithPush = async () => {
-    await pushRef.current.detachDevice();
-    return logout();
-  };
-
   const markAllNotifsRead = async () => {
     if (!currentUser?.id || !notifs.some((n) => !n.read)) return;
     setNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
@@ -5901,8 +5589,7 @@ function App() {
   const members = useMemo(() => usersWithStars.filter((u) => u.role === "member"), [usersWithStars]);
 
   const ctxValue = {
-    users: usersWithStars, setUsers, currentUser: currentUserState, setCurrentUser, logout: logoutWithPush, updateCurrentUser,
-    sharePost, toast, showToast, banner, dismissBanner, push,
+    users: usersWithStars, setUsers, currentUser: currentUserState, setCurrentUser, logout, updateCurrentUser,
     posts, setPosts, addPost, deletePost, editPostModal, closeEditModal, editingPost, editModalOpen, setEditModalOpen,
     stories, addStory, deleteStory, storyLikes, toggleStoryLike,
     likes, setLikes, toggleLike, myVotes, votePoll,

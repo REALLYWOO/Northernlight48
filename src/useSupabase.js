@@ -135,32 +135,6 @@ export const notifyMentionsDb = async (postId, userIds, snippet, kind = "post") 
   if (error) console.error("❌ notifyMentions:", error);
 };
 
-// แจ้งเตือนเมื่อมีคนไลก์ / คอมเมนต์ / ตอบกลับ (ฝั่งเซิร์ฟเวอร์ตรวจว่าเราทำจริงเท่านั้น) — kind: "like" | "comment"
-export const notifyEventDb = async (postId, kind, commentId = null) => {
-  const { error } = await supabase.rpc("notify_event", {
-    p_post_id: String(postId), p_kind: kind, p_comment_id: commentId ? String(commentId) : null,
-  });
-  if (error) console.error("❌ notifyEvent:", error);
-};
-
-// ===== Push บนหน้าจอเครื่อง =====
-export const savePushSubscriptionDb = async (sub) => {
-  const j = sub.toJSON();
-  const { error } = await supabase.rpc("save_push_subscription", {
-    p_endpoint: j.endpoint,
-    p_p256dh: j.keys?.p256dh,
-    p_auth: j.keys?.auth,
-    p_ua: (navigator.userAgent || "").slice(0, 200),
-  });
-  if (error) throw error;
-};
-
-export const removePushSubscriptionDb = async (endpoint) => {
-  if (!endpoint) return;
-  const { error } = await supabase.rpc("remove_push_subscription", { p_endpoint: endpoint });
-  if (error) console.error("❌ removePushSubscription:", error);
-};
-
 export const fetchNotifications = async (userId) => {
   if (!userId) return [];
   const { data, error } = await supabase
